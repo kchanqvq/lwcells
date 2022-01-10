@@ -126,7 +126,7 @@ is circularly invoked ~a time~:p, but the limit is ~a time~:p."
 
 (defun cell-name (symbol)
   (intern (concatenate 'string (symbol-name symbol) "-CELL")))
-(defmacro defcell* (var options val)
+(defmacro defcell* (var (&rest options) val)
   `(progn
      (define-symbol-macro ,var (cell-ref ,(cell-name var)))
      (defvar ,(cell-name var) (cell* ,options ,val))))

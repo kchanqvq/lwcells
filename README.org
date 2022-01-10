@@ -30,14 +30,14 @@ consistent state of cells according to rules defined between them.
 
   Observers:
 #+BEGIN_SRC lisp
-  (defvar *cell-1* (cell 1))
-  (defvar *cell-2* (cell 2))
-  (defvar *cell-3* (cell (+ (cell-ref *cell-1*) (cell-ref *cell-2*))))
+  (defcell *cell-1* 1)
+  (defcell *cell-2* 2)
+  (defcell *cell-3* (+ *cell-1* *cell-2*))
   (defun report-assign (cell)
     (let ((*print-circle* t))
       (format t "Assigning ~a to ~a." (cell-ref cell) cell)))
-  (add-observer *cell-3* 'report-assign)
-  (setf (cell-ref *cell-2*) 4)
+  (add-observer *cell-3*-cell 'report-assign)
+  (setf *cell-2* 4)
   ;; => Assigning 5 to #1=#S(CELL ...)
 #+END_SRC
   *Hackers' note:* We have to bind ~*print-circle*~ to t here, because
@@ -73,8 +73,8 @@ consistent state of cells according to rules defined between them.
 * For the hackers
 ** What happens to cyclic dependencies?
 #+BEGIN_SRC lisp
-  (defvar *cell-1* (cell 1))
-  (invoke-rule (make-rule :function (lambda () (setf (cell-ref *cell-1*) (1+ (cell-ref *cell-1*))))))
+  (defcell *cell-1* 1)
+  (invoke-rule (make-rule :function (lambda () (setf *cell-1* (1+ *cell-1*)))))
   ;; Debugger pops up with a cycle-error.
   ;; Some useful restart also provided: skip-invocation, increase-cycle-limit and deactivate-rule
 #+END_SRC
@@ -91,16 +91,17 @@ consistent state of cells according to rules defined between them.
 #+BEGIN_SRC lisp
   (defun float-no-news-p (old-value new-value)
     (< (abs (- old-value new-value)) 1e-5)))
-  (defvar *cell-1* (cell* (:no-news-p 'float-no-news-p) 1.0))
-  (invoke-rule (make-rule :function (lambda () (setf (cell-ref *cell-1*) (cos (cell-ref *cell-1*))))))
-  (cell-ref *cell-1*) ; => 0.7390823
+  (defcell* *cell-1* (:no-news-p 'float-no-news-p) 1)
+  (invoke-rule (make-rule :function (lambda () (setf *cell-1* (cos *cell-1*)))))
+  *cell-1* ; => 0.7390823
 #+END_SRC
   The above produces the [[https://en.wikipedia.org/wiki/Dottie_number][Dottie number]].
 
-  *Hackers' note:* ~cell*~ is a somewhat more powerful version of
-  ~cell~. It accepts an argument list which get passed to
+  *Hackers' note:* ~defcell*~ is a somewhat more powerful version of
+  ~defcell~. It accepts a list of options which get passed to
   ~make-cell~. Currently the only use is to set a different
   ~cell-no-news-p~. Read the docstring of ~(defstruct cell~)!
+  There's also ~cell*~, somewhat more powerful version of ~cell~.
   
 * Related works
   - [[https://github.com/kennytilton/cells][cells]] :: This is very
