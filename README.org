@@ -22,7 +22,7 @@ consistent state of cells according to rules defined between them.
   (defcell cell-3 (+ cell-1 cell-2))
 #+END_SRC
   *Hackers' note:* Under the hood, this stores the cell objects in
-  variable ~cell-*-cell~, and define the symbols ~cell-*~ themselves
+  variable ~cell-*-cell~, and defines the symbols ~cell-*~ themselves
   as symbol macros.
 
   There's also ~let-cell~ and ~let*-cell~ that does the similiar for
@@ -64,7 +64,7 @@ consistent state of cells according to rules defined between them.
   ~defclass~, an ~initialize-instance~ method to store cell objects
   into slots, and some accessors method to read/write values from cell
   objects in the slots. You can then use the accessors method to
-  transparently access to reactive values. To get and manipulate the
+  transparently access reactive values. To get and manipulate the
   underlying cell objects, use ~slot-value~.
 
   ~defmodel~ doesn't use any MOP magic, and is fully compatible with
