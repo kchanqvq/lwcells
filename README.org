@@ -75,18 +75,19 @@ consistent state of cells according to rules defined between them.
 #+BEGIN_SRC lisp
   (defvar *cell-1* (cell 1))
   (invoke-rule (make-rule :function (lambda () (setf (cell-ref *cell-1*) (1+ (cell-ref *cell-1*))))))
-  ;; Control stack exhausted!
+  ;; Debugger pops up with a cycle-error.
+  ;; Some useful restart also provided: skip-invocation, increase-cycle-limit and deactivate-rule
 #+END_SRC
-  Hmm, that's expected.
-
+  Hmm, that's expected. You can control how deep a circular invocation
+  will trigger ~cycle-error~ using the variable ~*cycle-limit*~. Set it
+  to nil to disable cycle detection completely.
+  
   *Hackers' note:* The above ~invoke-rule~ and ~make-rule~ is the
   unsugared interface for using rules, it shouldn't be hard for a
   hacker to figure out what they do.
 
-  Why not test for cyclic dependencies and throw an error by default?
-  It will make the implementation a bit more complex. But moreover,
-  the nature is full of circularities in the wild!  Just watch
-  following:
+  Circularities can be useful, and fun. The nature is full of
+  circularities in the wild! Just watch following:
 #+BEGIN_SRC lisp
   (defun float-no-news-p (old-value new-value)
     (< (abs (- old-value new-value)) 1e-5)))

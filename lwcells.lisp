@@ -3,6 +3,7 @@
   (:export #:careful-eql #:make-cell
            #:cell-p #:cell-no-news-p #:cell-ref #:update-deps
            #:make-rule #:rule #:rule-p #:rule-function #:*rule* #:invoke-rule
+           #:cycle-error #:*cycle-limit* #:skip-invocation #:increase-cycle-limit #:deactivate-rule
            #:observer-rule #:make-observer-rule #:observer-rule-inputs #:observer-rule-function
            #:add-observer #:remove-observer
            #:make-computed-cell #:cell #:cell* #:defcell #:defcell*
@@ -49,14 +50,17 @@ of the cell are equivalent during assignment."
 (defstruct rule
   "A primitive rule.
 INPUTS is the list of cells the rule depends on."
-  inputs function)
+  inputs (cycle-depth 0) function)
 
 (defstruct (observer-rule (:include rule)))
 
-(defmethod invoke-rule ((rule rule))
+(defun deactivate-rule (rule)
   (dolist (input (rule-inputs rule))
     (alexandria:deletef (cell-deps input) rule))
-  (setf (rule-inputs rule) nil)
+  (setf (rule-inputs rule) nil))
+
+(defmethod invoke-rule ((rule rule))
+  (deactivate-rule rule)
   (let ((*rule* rule))
     (funcall (rule-function rule))))
 
@@ -64,6 +68,40 @@ INPUTS is the list of cells the rule depends on."
   (let (*rule*)
     (apply (observer-rule-function rule)
            (observer-rule-inputs rule))))
+
+(defvar *cycle-limit* 30)
+
+(define-condition cycle-error (error)
+  ((rule :initarg :rule))
+  (:report (lambda (condition stream)
+             (with-slots (rule) condition
+               (let ((*print-circle* t))
+                 (format stream "~a~%
+is circularly invoked ~a time~:p, but the limit is ~a time~:p."
+                         rule (1+ (rule-cycle-depth rule)) *cycle-limit*))))))
+
+(defmethod invoke-rule :around ((rule rule))
+  (tagbody start
+     (let ((old-depth (rule-cycle-depth rule)))
+       (when (and *cycle-limit* (>= old-depth *cycle-limit*))
+         (restart-case
+             (error 'cycle-error :rule rule)
+           (skip-invocation ()
+             :report "Don't invoke the rule this time."
+             (return-from invoke-rule))
+           (increase-cycle-limit (&optional (new-cycle-limit (+ *cycle-limit* 15)))
+             :report "Increase *CYCLE-LIMIT* and try again."
+             (setq *cycle-limit* new-cycle-limit)
+             (go start))
+           (deactivate-rule ()
+             :report "Prevent this rule from ever running again."
+             (deactivate-rule rule)
+             (return-from invoke-rule))))
+       (unwind-protect
+            (progn
+              (incf (rule-cycle-depth rule))
+              (call-next-method))
+         (setf (rule-cycle-depth rule) old-depth)))))
 
 (defun make-computed-cell (function &rest args)
   (let ((new-cell (apply #'make-cell args)))
@@ -91,7 +129,7 @@ INPUTS is the list of cells the rule depends on."
 (defmacro defcell* (var options val)
   `(progn
      (define-symbol-macro ,var (cell-ref ,(cell-name var)))
-     (defvar ,(cell-name var) (cell* options ,val))))
+     (defvar ,(cell-name var) (cell* ,options ,val))))
 (defmacro defcell (var val)
   `(defcell* ,var nil ,val))
 (defmacro bind-cell (binder bindings &body body)
