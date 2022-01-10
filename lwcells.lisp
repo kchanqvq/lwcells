@@ -4,7 +4,7 @@
            #:cell-p #:cell-no-news-p #:cell-ref #:update-deps
            #:make-rule #:rule-p #:rule-functions #:*rule*
            #:add-observer #:remove-observer
-           #:make-computed-cell #:cell #:cell* #:defcell
+           #:make-computed-cell #:cell #:cell* #:defcell #:defcell*
            #:let-cell #:let*-cell
            #:defmodel #:self))
 (in-package :lwcells)
@@ -75,23 +75,23 @@ INPUTS is the list of cells the rule depends on."
   (check-type function (or function symbol))
   (let ((new-rule (make-observer-rule :inputs (list cell) :function function)))
     (pushnew new-rule (cell-deps cell) :key 'observer-rule-function)))
-
 (defun remove-observer (cell function)
   (check-type function (or function symbol))
   (alexandria:deletef (cell-deps cell) function :key 'observer-rule-function))
 
 (defmacro cell (&body body)
   `(make-computed-cell (lambda () ,@body)))
-
 (defmacro cell* (options &body body)
   `(make-computed-cell (lambda () ,@body) ,@options))
 
 (defun cell-name (symbol)
   (intern (concatenate 'string (symbol-name symbol) "-CELL")))
-(defmacro defcell (var val)
+(defmacro defcell* (var options val)
   `(progn
      (define-symbol-macro ,var (cell-ref ,(cell-name var)))
-     (defvar ,(cell-name var) (cell ,val))))
+     (defvar ,(cell-name var) (cell* options ,val))))
+(defmacro defcell (var val)
+  `(defcell* ,var nil ,val))
 (defmacro bind-cell (binder bindings &body body)
   (setq bindings (mapcar (lambda (binding) (if (consp binding) binding (list binding))) bindings))
   `(symbol-macrolet
