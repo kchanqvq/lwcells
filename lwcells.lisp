@@ -90,7 +90,7 @@ is circularly invoked ~a time~:p, but the limit is ~a time~:p."
              :report "Don't invoke the rule this time."
              (return-from invoke-rule))
            (increase-cycle-limit (&optional (new-cycle-limit (+ *cycle-limit* 15)))
-             :report "Increase *CYCLE-LIMIT* and try again."
+             :report "Increase *CYCLE-LIMIT* and try invoking the rule again."
              (setq *cycle-limit* new-cycle-limit)
              (go start))
            (deactivate-rule ()
