@@ -109,8 +109,8 @@ consistent state of cells according to rules defined between them.
     attached to slots and don't exist on their own. I might be
     wrong -- I don't understand all the code!
   - [[https://github.com/hu-dwim/hu.dwim.computed-class][computed-class]] ::
-    A bit more complicated than ~lwcells~. Cells also seem to alway bind
-    to slots, and it needs lots of ~computed-as~ everywhere.
+    A bit more complicated than ~lwcells~. The syntax is also a bit less
+    sweet, requiring lots of ~computed-as~ everywhere.
     
 * Documentation
   Read the source code! There isn't lots of code.
