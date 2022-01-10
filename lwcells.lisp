@@ -5,7 +5,8 @@
            #:make-rule #:rule-p #:rule-functions #:*rule*
            #:add-observer #:remove-observer
            #:make-computed-cell #:cell #:cell* #:defcell
-           #:let-cell #:let*-cell))
+           #:let-cell #:let*-cell
+           #:defmodel #:self))
 (in-package :lwcells)
 
 (defun careful-eql (old-value new-value)
