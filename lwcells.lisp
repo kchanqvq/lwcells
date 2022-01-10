@@ -2,7 +2,8 @@
   (:use #:common-lisp)
   (:export #:careful-eql #:make-cell
            #:cell-p #:cell-no-news-p #:cell-ref #:update-deps
-           #:make-rule #:rule-p #:rule-functions #:*rule*
+           #:make-rule #:rule #:rule-p #:rule-function #:*rule* #:invoke-rule
+           #:observer-rule #:make-observer-rule #:observer-rule-inputs #:observer-rule-function
            #:add-observer #:remove-observer
            #:make-computed-cell #:cell #:cell* #:defcell #:defcell*
            #:let-cell #:let*-cell
@@ -24,7 +25,8 @@ NO-NEWS-P is a function to test if OLD-VALUE and NEW-VALUE
 of the cell are equivalent during assignment."
   value deps (no-news-p 'careful-eql))
 
-(defvar *rule* nil)
+(defvar *rule* nil "The rule currently being run.
+`cell-ref', when called, will add such rule as dependents.")
 
 (defun cell-ref (cell)
   (when *rule*
