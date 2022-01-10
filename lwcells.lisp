@@ -155,7 +155,8 @@ defined before it using (<accessor> self)."
                    cell-slots)
          ,@(mapcar (lambda (slot initform)
                      ;; some cell :initform may have been overriden by an provided :initarg
-                     `(unless (slot-boundp self ',slot)
-                        (setf (slot-value self ',slot)
-                              (cell ,initform))))
+                     (unless (eq initform 'unbound)
+                       `(unless (slot-boundp self ',slot)
+                          (setf (slot-value self ',slot)
+                                (cell ,initform)))))
                    cell-slots cell-initforms)))))
