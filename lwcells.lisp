@@ -107,32 +107,28 @@ INPUTS is the list of cells the rule depends on."
 
 (defmacro defmodel (class directsupers slotspecs &rest options)
   "Similar to `defclass', but supporting defining cell slots.
-
-All slot definitions are by default treated as cell slots.  Pass :cell
-nil to make an ordinary slot. A cell slot's :initform contains the
-definition expression for its cell, and can refer to other cell slots
-defined before it using (<accessor> self)."
-  (let (cell-slots cell-accessors cell-initforms)
+A slot definition is treated as cell slots if it has a :cell slot option.
+The expression after :cell is treated as the definition for its cell,
+and can refer to other cell slots defined before it using (<accessor> self)."
+  (let (cell-slots cell-accessors cell-defs)
     (setq slotspecs
           (loop for slotspec in slotspecs
                 collect (destructuring-bind
                             (slot &rest slotargs
-                             &key (cell t) (accessor slot) (initform 'unbound)
+                             &key (cell 'unbound) (accessor slot)
                              &allow-other-keys)
                             slotspec
-                          (if cell
+                          (if (eq cell 'unbound) slotspec
                               (let ((slotargs (copy-list slotargs)))
                                 (push slot cell-slots)
                                 (push accessor cell-accessors)
-                                (push initform cell-initforms)
+                                (push cell cell-defs)
                                 (remf slotargs :cell)
                                 (remf slotargs :accessor)
-                                (remf slotargs :initform)
-                                (cons slot slotargs))
-                              slotspec))))
+                                (cons slot slotargs))))))
     (psetq cell-slots (nreverse cell-slots)
            cell-accessors (nreverse cell-accessors)
-           cell-initforms (nreverse cell-initforms))
+           cell-defs (nreverse cell-defs))
     `(progn
        (defclass ,class ,directsupers
          ,slotspecs ,@options)
@@ -155,10 +151,9 @@ defined before it using (<accessor> self)."
                           (setf (slot-value self ',slot)
                                 (make-cell :value (slot-value self ',slot))))))
                    cell-slots)
-         ,@(mapcar (lambda (slot initform)
+         ,@(mapcar (lambda (slot def)
                      ;; some cell :initform may have been overriden by an provided :initarg
-                     (unless (eq initform 'unbound)
-                       `(unless (slot-boundp self ',slot)
-                          (setf (slot-value self ',slot)
-                                (cell ,initform)))))
-                   cell-slots cell-initforms)))))
+                     `(unless (slot-boundp self ',slot)
+                        (setf (slot-value self ',slot)
+                              (cell ,def))))
+                   cell-slots cell-defs)))))

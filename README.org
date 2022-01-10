@@ -7,19 +7,19 @@ consistent state of cells according to rules defined between them.
   Basic usage:
 #+BEGIN_SRC lisp
   (use-package #:lwcells)
-  (defvar cell-1 (cell 1))
-  (defvar cell-2 (cell 2))
-  (defvar cell-3 (cell (+ (cell-ref cell-1) (cell-ref cell-2))))
-  (cell-ref cell-3) ; => 3
-  (setf (cell-ref cell-2) 5)
-  (cell-ref cell-3) ; => 6
+  (defvar cell-x (cell 1))
+  (defvar cell-y (cell 2))
+  (defvar cell-z (cell (+ (cell-ref cell-x) (cell-ref cell-y))))
+  (cell-ref cell-z) ; => 3
+  (setf (cell-ref cell-y) 5)
+  (cell-ref cell-z) ; => 6
 #+END_SRC
 
   Fancier syntax sugar that does the same thing as above:
 #+BEGIN_SRC lisp
-  (defcell cell-1 1)
-  (defcell cell-2 2)
-  (defcell cell-3 (+ cell-1 cell-2))
+  (defcell cell-x 1)
+  (defcell cell-y 2)
+  (defcell cell-z (+ cell-x cell-y))
 #+END_SRC
   *Hackers' note:* Under the hood, this stores the cell objects in
   variable ~cell-*-cell~, and defines the symbols ~cell-*~ themselves
@@ -30,14 +30,14 @@ consistent state of cells according to rules defined between them.
 
   Observers:
 #+BEGIN_SRC lisp
-  (defvar cell-1 (cell 1))
-  (defvar cell-2 (cell 2))
-  (defvar cell-3 (cell (+ (cell-ref cell-1) (cell-ref cell-2))))
+  (defvar cell-x (cell 1))
+  (defvar cell-y (cell 2))
+  (defvar cell-z (cell (+ (cell-ref cell-x) (cell-ref cell-y))))
   (defun report-assign (cell)
     (let ((*print-circle* t))
       (format t "Assigning ~a to ~a." (cell-ref cell) cell)))
-  (add-observer cell-3 'report-assign)
-  (setf (cell-ref cell-2) 4)
+  (add-observer cell-z 'report-assign)
+  (setf (cell-ref cell-y) 4)
   ;; => Assigning 5 to #1=#S(CELL ...)
 #+END_SRC
   *Hackers' note:* We have to bind ~*print-circle*~ to t here, because
@@ -51,10 +51,10 @@ consistent state of cells according to rules defined between them.
 
   Convenience for CLOS:
 #+BEGIN_SRC lisp
-  (defmodel item () ((weight :initform 0 :initarg :weight)))
+  (defmodel item () ((weight :cell 0 :initarg :weight)))
   (defmodel container ()
-    ((items :initform nil)
-     (weight :initform (reduce #'+ (items self) :key #'weight))))
+    ((items :cell nil)
+     (weight :cell (reduce #'+ (items self) :key #'weight))))
   (defvar *container* (make-instance 'container))
   (weight *container*) ; => 0
   (push (make-instance 'item :weight 10) (items *container*))
@@ -73,8 +73,8 @@ consistent state of cells according to rules defined between them.
 * For the hackers
 ** What happens to cyclic dependencies?
 #+BEGIN_SRC lisp
-  (defvar cell-1 (cell 1))
-  (invoke-rule (make-rule :function (lambda () (setf (cell-ref cell-1) (1+ (cell-ref cell-1))))))
+  (defvar cell-x (cell 1))
+  (invoke-rule (make-rule :function (lambda () (setf (cell-ref cell-x) (1+ (cell-ref cell-x))))))
   ;; Control stack exhausted!
 #+END_SRC
   Hmm, that's expected.
@@ -90,9 +90,9 @@ consistent state of cells according to rules defined between them.
 #+BEGIN_SRC lisp
   (defun float-no-news-p (old-value new-value)
     (< (abs (- old-value new-value)) 1e-5)))
-  (defvar cell-1 (cell* (:no-news-p 'float-no-news-p) 1.0))
-  (invoke-rule (make-rule :function (lambda () (setf (cell-ref cell-1) (cos (cell-ref cell-1))))))
-  (cell-ref cell-1) ; => 0.7390823
+  (defvar cell-x (cell* (:no-news-p 'float-no-news-p) 1.0))
+  (invoke-rule (make-rule :function (lambda () (setf (cell-ref cell-x) (cos (cell-ref cell-x))))))
+  (cell-ref cell-x) ; => 0.7390823
 #+END_SRC
   The above produces the [[https://en.wikipedia.org/wiki/Dottie_number][Dottie number]].
 
