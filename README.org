@@ -7,37 +7,37 @@ consistent state of cells according to rules defined between them.
   Basic usage:
 #+BEGIN_SRC lisp
   (use-package #:lwcells)
-  (defvar cell-x (cell 1))
-  (defvar cell-y (cell 2))
-  (defvar cell-z (cell (+ (cell-ref cell-x) (cell-ref cell-y))))
-  (cell-ref cell-z) ; => 3
-  (setf (cell-ref cell-y) 5)
-  (cell-ref cell-z) ; => 6
+  (defvar *cell-1* (cell 1))
+  (defvar *cell-2* (cell 2))
+  (defvar *cell-3* (cell (+ (cell-ref *cell-1*) (cell-ref *cell-2*))))
+  (cell-ref *cell-3*) ; => 3
+  (setf (cell-ref *cell-2*) 5)
+  (cell-ref *cell-3*) ; => 6
 #+END_SRC
 
   Fancier syntax sugar that does the same thing as above:
 #+BEGIN_SRC lisp
-  (defcell cell-x 1)
-  (defcell cell-y 2)
-  (defcell cell-z (+ cell-x cell-y))
+  (defcell *cell-1* 1)
+  (defcell *cell-2* 2)
+  (defcell *cell-3* (+ *cell-1* *cell-2*))
 #+END_SRC
   *Hackers' note:* Under the hood, this stores the cell objects in
-  variable ~cell-*-cell~, and defines the symbols ~cell-*~ themselves
-  as symbol macros.
+  variable like ~*cell-1*-cell~, and defines symbols like ~*cell-1*~
+  themselves as symbol macros.
 
   There's also ~let-cell~ and ~let*-cell~ that does the similiar for
   lexical variables.
 
   Observers:
 #+BEGIN_SRC lisp
-  (defvar cell-x (cell 1))
-  (defvar cell-y (cell 2))
-  (defvar cell-z (cell (+ (cell-ref cell-x) (cell-ref cell-y))))
+  (defvar *cell-1* (cell 1))
+  (defvar *cell-2* (cell 2))
+  (defvar *cell-3* (cell (+ (cell-ref *cell-1*) (cell-ref *cell-2*))))
   (defun report-assign (cell)
     (let ((*print-circle* t))
       (format t "Assigning ~a to ~a." (cell-ref cell) cell)))
-  (add-observer cell-z 'report-assign)
-  (setf (cell-ref cell-y) 4)
+  (add-observer *cell-3* 'report-assign)
+  (setf (cell-ref *cell-2*) 4)
   ;; => Assigning 5 to #1=#S(CELL ...)
 #+END_SRC
   *Hackers' note:* We have to bind ~*print-circle*~ to t here, because
@@ -73,8 +73,8 @@ consistent state of cells according to rules defined between them.
 * For the hackers
 ** What happens to cyclic dependencies?
 #+BEGIN_SRC lisp
-  (defvar cell-x (cell 1))
-  (invoke-rule (make-rule :function (lambda () (setf (cell-ref cell-x) (1+ (cell-ref cell-x))))))
+  (defvar *cell-1* (cell 1))
+  (invoke-rule (make-rule :function (lambda () (setf (cell-ref *cell-1*) (1+ (cell-ref *cell-1*))))))
   ;; Control stack exhausted!
 #+END_SRC
   Hmm, that's expected.
@@ -90,9 +90,9 @@ consistent state of cells according to rules defined between them.
 #+BEGIN_SRC lisp
   (defun float-no-news-p (old-value new-value)
     (< (abs (- old-value new-value)) 1e-5)))
-  (defvar cell-x (cell* (:no-news-p 'float-no-news-p) 1.0))
-  (invoke-rule (make-rule :function (lambda () (setf (cell-ref cell-x) (cos (cell-ref cell-x))))))
-  (cell-ref cell-x) ; => 0.7390823
+  (defvar *cell-1* (cell* (:no-news-p 'float-no-news-p) 1.0))
+  (invoke-rule (make-rule :function (lambda () (setf (cell-ref *cell-1*) (cos (cell-ref *cell-1*))))))
+  (cell-ref *cell-1*) ; => 0.7390823
 #+END_SRC
   The above produces the [[https://en.wikipedia.org/wiki/Dottie_number][Dottie number]].
 
