@@ -175,7 +175,7 @@ and can refer to other cell slots defined before it using (<accessor> self)."
                    `(progn
                       (defmethod ,accessor ((object ,class))
                         (cell-ref (slot-value object ',slot)))
-                      (defmethod (setf ,slot) (new-value (object ,class))
+                      (defmethod (setf ,accessor) (new-value (object ,class))
                         (setf (cell-ref (slot-value object ',slot)) new-value))))
                  cell-slots cell-accessors)
 
