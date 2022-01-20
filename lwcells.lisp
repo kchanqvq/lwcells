@@ -103,12 +103,12 @@ is circularly invoked ~a time~:p, but the limit is ~a time~:p."
               (call-next-method))
          (setf (rule-cycle-depth rule) old-depth)))))
 
+(defmacro rule (&body body)
+  `(invoke-rule (make-rule :function (lambda () ,@body))))
+
 (defun make-computed-cell (function &rest args)
   (let ((new-cell (apply #'make-cell args)))
-    (invoke-rule
-     (make-rule :function
-                (lambda ()
-                  (setf (cell-ref new-cell) (funcall function)))))
+    (rule (setf (cell-ref new-cell) (funcall function)))
     new-cell))
 
 (defun add-observer (cell function)

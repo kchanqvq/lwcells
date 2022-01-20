@@ -74,7 +74,7 @@ consistent state of cells according to rules defined between them.
 ** What happens to cyclic dependencies?
 #+BEGIN_SRC lisp
   (defcell *cell-1* 1)
-  (invoke-rule (make-rule :function (lambda () (setf *cell-1* (1+ *cell-1*)))))
+  (rule (setf *cell-1* (1+ *cell-1*)))
   ;; Debugger pops up with a cycle-error.
   ;; Some useful restart also provided: skip-invocation, increase-cycle-limit and deactivate-rule
 #+END_SRC
@@ -82,9 +82,9 @@ consistent state of cells according to rules defined between them.
   will trigger ~cycle-error~ using the variable ~*cycle-limit*~. Set it
   to nil to disable cycle detection completely.
   
-  *Hackers' note:* The above ~invoke-rule~ and ~make-rule~ is the
-  unsugared interface for using rules, it shouldn't be hard for a
-  hacker to figure out what they do.
+  *Hackers' note:* ~(rule &body BODY)~ creates a rule using ~BODY~
+  and fires it immediately. This is how computed cells are implemented
+  under the hood.
 
   Circularities can be useful, and fun. The nature is full of
   circularities in the wild! Just watch following:
