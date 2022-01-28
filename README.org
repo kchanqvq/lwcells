@@ -1,26 +1,39 @@
 #+TITLE:LWCELLS - Light Weight Cells
 ~LWCELLS~ is a dataflow extension to Common Lisp. It maintains a
-consistent state of cells according to rules defined between them.
-~LWCELLS~ is designed to be simple, clean, compositional and flexible.
+consistent state of cells according to functions specifying their
+relation.  ~LWCELLS~ is designed to be simple, clean, compositional
+and flexible.
 
 * Tutorial
   Basic usage:
 #+BEGIN_SRC lisp
-  (use-package #:lwcells)
-  (defvar *cell-1* (cell 1))
-  (defvar *cell-2* (cell 2))
-  (defvar *cell-3* (cell (+ (cell-ref *cell-1*) (cell-ref *cell-2*))))
+  (use-package :lwcells)
+  (defparameter *cell-1* (cell 1))
+  (defparameter *cell-2* (cell 2))
+  (defparameter *cell-3* (cell (+ (cell-ref *cell-1*) (cell-ref *cell-2*))))
   (cell-ref *cell-3*) ; => 3
   (setf (cell-ref *cell-2*) 5)
   (cell-ref *cell-3*) ; => 6
 #+END_SRC
+  *Hackers' note:* The body of each ~cell~ form is wrapped into a
+  function and assigned to the ~cell-function~ slot of constructed
+  ~cell~ object (actually, a ~lazy-cell~). At any moment, ~cell~ with
+  non-nil ~cell-function~ will ensure their observed value matches the
+  result of running ~cell-function~. If you explicitly ~(setf
+  cell-ref)~ a cell, its ~cell-function~ is removed to prevent it from
+  running again and overwrite the explicitly assigned value.
 
-  Fancier syntax sugar that does the same thing as above:
+  Fancier syntax sugar that does roughly the same thing as above:
 #+BEGIN_SRC lisp
   (defcell *cell-1* 1)
   (defcell *cell-2* 2)
   (defcell *cell-3* (+ *cell-1* *cell-2*))
 #+END_SRC
+  ~defcell~ have the additional nicety that when you redefine a cell,
+  if an existing cell object is to be overwritten, such cell is also
+  deactivated so that observers (to be explained!) defined on the old
+  cell stop making noises.
+  
   *Hackers' note:* Under the hood, this stores the cell objects in
   variable like ~*cell-1*-cell~, and defines symbols like ~*cell-1*~
   themselves as symbol macros.
@@ -40,14 +53,9 @@ consistent state of cells according to rules defined between them.
   (setf *cell-2* 4)
   ;; => Assigning 5 to #1=#S(CELL ...)
 #+END_SRC
-  *Hackers' note:* We have to bind ~*print-circle*~ to t here, because
-  the reference graph of ~LWCELLS~ system is very cyclic (there are
-  lots of pointer pairs in opposite direction) and will make the
-  printer infinite loop otherwise.
   
-  *Hackers' note:* Under the hood, observers are implemented as simply
-  rules with only one dependency, and their dependencies are never
-  changed. See the source for ~invoke-rule~.
+  *Hackers' note:* Under the hood, observers are implemented as ~observer-cell~,
+  a special kind of ~cell~ whose ~cell-ins~ never change.
 
   Convenience for CLOS:
 #+BEGIN_SRC lisp
@@ -69,40 +77,7 @@ consistent state of cells according to rules defined between them.
 
   ~defmodel~ doesn't use any MOP magic, and is fully compatible with
   standard CLOS classes.
-  
-* For the hackers
-** What happens to cyclic dependencies?
-#+BEGIN_SRC lisp
-  (defcell *cell-1* 1)
-  (rule (setf *cell-1* (1+ *cell-1*)))
-  ;; Debugger pops up with a cycle-error.
-  ;; Some useful restart also provided: skip-invocation, increase-cycle-limit and deactivate-rule
-#+END_SRC
-  Hmm, that's expected. You can control how deep a circular invocation
-  will trigger ~cycle-error~ using the variable ~*cycle-limit*~. Set it
-  to nil to disable cycle detection completely.
-  
-  *Hackers' note:* ~(rule &body BODY)~ creates a rule using ~BODY~
-  and fires it immediately. This is how computed cells are implemented
-  under the hood.
-
-  Circularities can be useful, and fun. The nature is full of
-  circularities in the wild! Just watch following:
-#+BEGIN_SRC lisp
-  (defun float-no-news-p (old-value new-value)
-    (< (abs (- old-value new-value)) 1e-5)))
-  (defcell* *cell-1* (:no-news-p 'float-no-news-p) 1)
-  (invoke-rule (make-rule :function (lambda () (setf *cell-1* (cos *cell-1*)))))
-  *cell-1* ; => 0.7390823
-#+END_SRC
-  The above produces the [[https://en.wikipedia.org/wiki/Dottie_number][Dottie number]].
-
-  *Hackers' note:* ~defcell*~ is a somewhat more powerful version of
-  ~defcell~. It accepts a list of options which get passed to
-  ~make-cell~. Currently the only use is to set a different
-  ~cell-no-news-p~. Read the docstring of ~(defstruct cell~)!
-  There's also ~cell*~, somewhat more powerful version of ~cell~.
-  
+    
 * Related works
   - [[https://github.com/kennytilton/cells][cells]] :: This is very
     powerful, but also very complicated. AFAIU cells are also always

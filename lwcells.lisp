@@ -1,12 +1,10 @@
 (uiop:define-package lwcells
-  (:use #:common-lisp)
-  (:export #:careful-eql #:make-cell
-           #:cell-p #:cell-no-news-p #:cell-ref #:update-deps
-           #:make-rule #:rule #:rule-p #:rule-function #:*rule* #:invoke-rule
-           #:cycle-error #:*cycle-limit* #:skip-invocation #:increase-cycle-limit #:deactivate-rule
-           #:observer-rule #:make-observer-rule #:observer-rule-inputs #:observer-rule-function
-           #:add-observer #:remove-observer
-           #:make-computed-cell #:cell #:cell* #:defcell #:defcell*
+  (:use #:common-lisp #:named-closure)
+  (:export #:careful-eql #:make-cell #:make-lazy-cell #:make-observer-cell
+           #:cell-p #:lazy-cell-p #:cell-no-news-p #:cell-ref #:update-deps
+           #:cycle-error #:*cycle-limit* #:skip-evaluation #:increase-cycle-limit #:deactivate-cell
+           #:add-observer #:remove-observer #:observer-cell-p
+           #:cell #:cell* #:defcell #:defcell*
            #:let-cell #:let*-cell
            #:defmodel #:self))
 (in-package :lwcells)
@@ -21,115 +19,132 @@ This scheme is safe even if the value is mutated destructively."
 
 (defstruct cell
   "A primitive reactive cell.
-DEPS is a list of rules that depend on this cell.
 NO-NEWS-P is a function to test if OLD-VALUE and NEW-VALUE
 of the cell are equivalent during assignment."
-  value deps (no-news-p 'careful-eql))
+  ins outs function (cycle-depth 0)
+  value (no-news-p 'careful-eql))
+(defstruct (lazy-cell (:include cell))
+  clean)
+(defstruct (observer-cell (:include cell)))
 
-(defvar *rule* nil "The rule currently being run.
-`cell-ref', when called, will add such rule as dependents.")
+(defvar *activations* nil "The eager cells to be run at the end of
+this cycle of propagation.")
 
-(defun cell-ref (cell)
-  (when *rule*
-    (pushnew *rule* (cell-deps cell))
-    (pushnew cell (rule-inputs *rule*)))
-  (cell-value cell))
+(defvar *cell* nil "The cell currently being run.
+`cell-ref', when called, will add the referenced cell to its cell-ins.")
 
-(defun update-deps (cell)
-  "Force invoking dependent rules of CELL."
-  (mapc #'invoke-rule (cell-deps cell)))
-
-(defun (setf cell-ref) (new-value cell)
-  (let ((old-value (cell-value cell)))
-    (setf (cell-value cell) new-value)
-    (when (cell-deps cell)
-      (unless (funcall (cell-no-news-p cell) old-value new-value)
-        (update-deps cell))))
-  new-value)
-
-(defstruct rule
-  "A primitive rule.
-INPUTS is the list of cells the rule depends on."
-  inputs (cycle-depth 0) function)
-
-(defstruct (observer-rule (:include rule)))
-
-(defun deactivate-rule (rule)
-  (dolist (input (rule-inputs rule))
-    (alexandria:deletef (cell-deps input) rule))
-  (setf (rule-inputs rule) nil))
-
-(defmethod invoke-rule ((rule rule))
-  (deactivate-rule rule)
-  (let ((*rule* rule))
-    (funcall (rule-function rule))))
-
-(defmethod invoke-rule ((rule observer-rule))
-  (let (*rule*)
-    (apply (observer-rule-function rule)
-           (observer-rule-inputs rule))))
+(defun invalidate (cell)
+  "Mark dependent cells of CELL as not clean."
+  (unless (lazy-cell-p cell)
+    (pushnew cell *activations*))
+  (when (lazy-cell-p cell)
+    (if (lazy-cell-clean cell)
+        (setf (lazy-cell-clean cell) nil)
+        (return-from invalidate)))
+  (mapc #'invalidate (cell-outs cell)))
 
 (defvar *cycle-limit* 30)
 
 (define-condition cycle-error (error)
-  ((rule :initarg :rule))
+  ((cell :initarg :cell))
   (:report (lambda (condition stream)
-             (with-slots (rule) condition
+             (with-slots (cell) condition
                (let ((*print-circle* t))
                  (format stream "~a~%
 is circularly invoked ~a time~:p, but the limit is ~a time~:p."
-                         rule (1+ (rule-cycle-depth rule)) *cycle-limit*))))))
+                         cell (1+ (cell-cycle-depth cell)) *cycle-limit*))))))
 
-(defmethod invoke-rule :around ((rule rule))
-  (tagbody start
-     (let ((old-depth (rule-cycle-depth rule)))
+(defun evaluate (cell)
+  (when (cell-function cell)
+    (tagbody start
+     (let ((old-depth (cell-cycle-depth cell)))
        (when (and *cycle-limit* (>= old-depth *cycle-limit*))
          (restart-case
-             (error 'cycle-error :rule rule)
-           (skip-invocation ()
-             :report "Don't invoke the rule this time."
-             (return-from invoke-rule))
+             (error 'cycle-error :cell cell)
+           (skip-evaluation ()
+             :report "Don't evaluate the cell this time."
+             (return-from evaluate))
            (increase-cycle-limit (&optional (new-cycle-limit (+ *cycle-limit* 15)))
-             :report "Increase *CYCLE-LIMIT* and try invoking the rule again."
+             :report "Increase *CYCLE-LIMIT* and try evaluating the cell again."
              (setq *cycle-limit* new-cycle-limit)
              (go start))
-           (deactivate-rule ()
-             :report "Prevent this rule from ever running again."
-             (deactivate-rule rule)
-             (return-from invoke-rule))))
+           (deactivate-cell ()
+             :report "Prevent this cell from ever triggering again."
+             (deactivate cell)
+             (return-from evaluate))))
        (unwind-protect
-            (progn
-              (incf (rule-cycle-depth rule))
-              (call-next-method))
-         (setf (rule-cycle-depth rule) old-depth)))))
+            (let ((*cell* cell))
+              (incf (cell-cycle-depth cell))
+              (unless (observer-cell-p cell)
+                (deactivate cell))
+              (setf (cell-value cell) (funcall (cell-function cell)))
+              (when (lazy-cell-p cell)
+                (setf (lazy-cell-clean cell) :clean)))
+         (setf (cell-cycle-depth cell) old-depth)))))
+  (unless (cell-ins cell)
+    (setf (cell-function cell) nil))
+  cell)
 
-(defmacro rule (&body body)
-  `(invoke-rule (make-rule :function (lambda () ,@body))))
+(defun deactivate (cell)
+  (dolist (input (cell-ins cell))
+    (alexandria:deletef (cell-outs input) cell))
+  (setf (cell-ins cell) nil))
 
-(defun make-computed-cell (function &rest args)
-  (let ((new-cell (apply #'make-cell args)))
-    (rule (setf (cell-ref new-cell) (funcall function)))
-    new-cell))
+(defun cell-ref (cell)
+  (when *cell*
+    (pushnew *cell* (cell-outs cell))
+    (pushnew cell (cell-ins *cell*)))
+  (when (and (lazy-cell-p cell)
+             (not (lazy-cell-clean cell)))
+    (evaluate cell))
+  (cell-value cell))
+
+(defun (setf cell-ref) (new-value cell)
+  (let ((old-value (cell-value cell)))
+    (deactivate cell)
+    (setf (cell-value cell) new-value)
+    (when (cell-outs cell)
+      (unless (funcall (cell-no-news-p cell) old-value new-value)
+        (mapc #'evaluate
+              (let (*activations*)
+                (mapc #'invalidate (cell-outs cell))
+                *activations*)))))
+  new-value)
+
+(defnclo observer (function) ()
+  (let ((in-cells (cell-ins *cell*))
+        (*cell* nil))
+    (apply function in-cells)))
+
+(defun cell-observer-function (cell)
+  (when (typep (cell-function cell) 'observer)
+    (slot-value (cell-function cell) 'function)))
 
 (defun add-observer (cell function)
   (check-type function (or function symbol))
-  (let ((new-rule (make-observer-rule :inputs (list cell) :function function)))
-    (pushnew new-rule (cell-deps cell) :key 'observer-rule-function)))
+  (unless (find function (cell-outs cell) :key 'cell-observer-function)
+    (push (make-observer-cell :ins (list cell) :function (make-observer function))
+          (cell-outs cell))
+    (cell-ref cell)
+    function))
 (defun remove-observer (cell function)
-  (check-type function (or function symbol))
-  (alexandria:deletef (cell-deps cell) function :key 'observer-rule-function))
+  (alexandria:deletef (cell-outs cell) function :key 'cell-observer-function)
+  function)
 
 (defmacro cell (&body body)
-  `(make-computed-cell (lambda () ,@body)))
+  `(make-lazy-cell :function (lambda () ,@body)))
 (defmacro cell* (options &body body)
-  `(make-computed-cell (lambda () ,@body) ,@options))
+  `(make-lazy-cell :function (lambda () ,@body) ,@options))
 
 (defun cell-name (symbol)
   (intern (concatenate 'string (symbol-name symbol) "-CELL")))
 (defmacro defcell* (var (&rest options) val)
-  `(progn
-     (define-symbol-macro ,var (cell-ref ,(cell-name var)))
-     (defvar ,(cell-name var) (cell* ,options ,val))))
+  (let ((cell-name (cell-name var)))
+    `(progn
+       (define-symbol-macro ,var (cell-ref ,(cell-name var)))
+       (when (and (boundp ',cell-name) (typep (symbol-value ',cell-name) 'cell))
+         (deactivate (symbol-value ',cell-name)))
+       (defparameter ,cell-name (cell* ,options ,val)))))
 (defmacro defcell (var val)
   `(defcell* ,var nil ,val))
 (defmacro bind-cell (binder bindings &body body)

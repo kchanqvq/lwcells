@@ -6,4 +6,4 @@
   :description "Light Weight Cells"
   :homepage "https://github.com/BlueFlo0d/lwcells"
   :components ((:file "lwcells"))
-  :depends-on (:alexandria))
+  :depends-on (:alexandria :named-closure))
