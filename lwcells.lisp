@@ -1,7 +1,7 @@
 (uiop:define-package lwcells
   (:use #:common-lisp #:named-closure)
   (:export #:careful-eql #:make-cell #:make-lazy-cell #:make-observer-cell
-           #:cell-p #:lazy-cell-p #:cell-no-news-p #:cell-ref #:update-deps
+           #:cell-p #:lazy-cell-p #:cell-no-news-p #:cell-ref
            #:cycle-error #:*cycle-limit* #:skip-evaluation #:increase-cycle-limit #:deactivate-cell
            #:add-observer #:remove-observer #:observer-cell-p
            #:cell #:cell* #:defcell #:defcell*
