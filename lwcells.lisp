@@ -102,7 +102,8 @@ is circularly invoked ~a time~:p, but the limit is ~a time~:p."
 (defun (setf cell-ref) (new-value cell)
   (let ((old-value (cell-value cell)))
     (deactivate cell)
-    (setf (cell-value cell) new-value)
+    (setf (cell-value cell) new-value
+          (cell-function cell) nil)
     (when (cell-outs cell)
       (unless (funcall (cell-no-news-p cell) old-value new-value)
         (mapc #'evaluate
