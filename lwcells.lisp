@@ -2,6 +2,7 @@
   (:use #:common-lisp #:named-closure)
   (:export #:careful-eql #:make-cell #:make-lazy-cell #:make-observer-cell
            #:cell-p #:lazy-cell-p #:cell-no-news-p #:cell-ref
+           #:with-delayed-evaluation
            #:cycle-error #:*cycle-limit* #:skip-evaluation #:increase-cycle-limit #:deactivate-cell
            #:add-observer #:remove-observer #:observer-cell-p
            #:cell #:cell* #:defcell #:defcell*
@@ -27,8 +28,16 @@ of the cell are equivalent during assignment."
   clean)
 (defstruct (observer-cell (:include cell)))
 
+(defmethod print-object ((object cell) stream)
+  (print-unreadable-object (object stream :type t :identity t)
+    (format stream "~a ~a"
+            (cell-value object)
+            (cell-function object))))
+
 (defvar *activations* nil "The eager cells to be run at the end of
 this cycle of propagation.")
+
+(defvar *delay-evaluation-p* nil "Bind this to T to delay cell evaluations.")
 
 (defvar *cell* nil "The cell currently being run.
 `cell-ref', when called, will add the referenced cell to its cell-ins.")
@@ -106,11 +115,27 @@ is circularly invoked ~a time~:p, but the limit is ~a time~:p."
           (cell-function cell) nil)
     (when (cell-outs cell)
       (unless (funcall (cell-no-news-p cell) old-value new-value)
-        (mapc #'evaluate
-              (let (*activations*)
-                (mapc #'invalidate (cell-outs cell))
-                *activations*)))))
+        (if *delay-evaluation-p*
+            (mapc #'invalidate (cell-outs cell))
+            (mapc #'evaluate
+                  (let (*activations*)
+                    (mapc #'invalidate (cell-outs cell))
+                    *activations*))))))
   new-value)
+
+(defun call-with-delayed-evaluation (thunk)
+  (if *delay-evaluation-p*
+      (funcall thunk)
+      (let (activations)
+        (unwind-protect
+             (let ((*delay-evaluation-p* t)
+                   *activations*)
+               (prog1 (funcall thunk)
+                 (setq activations *activations*)))
+          (mapc #'evaluate activations)))))
+
+(defmacro with-delayed-evaluation (&body body)
+  `(call-with-delayed-evaluation (lambda () ,@body)))
 
 (defnclo observer (function) ()
   (let ((in-cells (cell-ins *cell*))
