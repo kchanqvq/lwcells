@@ -1,13 +1,15 @@
 (uiop:define-package lwcells
   (:use #:common-lisp #:named-closure)
-  (:export #:careful-eql #:make-cell #:make-lazy-cell #:make-observer-cell
-           #:cell-p #:lazy-cell-p #:cell-no-news-p #:cell-ref
-           #:with-delayed-evaluation
+  (:export #:careful-eql #:make-eager-cell #:make-lazy-cell #:make-observer-cell
+           #:cell-p #:lazy-cell-p #:eager-cell-p #:cell-no-news-p #:cell-ref
+           #:deactivate #:cell-set-function #:with-delayed-evaluation
            #:cycle-error #:*cycle-limit* #:skip-evaluation #:increase-cycle-limit #:deactivate-cell
            #:add-observer #:remove-observer #:observer-cell-p
            #:cell #:cell* #:defcell #:defcell*
            #:let-cell #:let*-cell
-           #:defmodel #:self))
+           #:defmodel #:self)
+  (:import-from #:damn-fast-priority-queue
+                #:make-queue #:enqueue #:dequeue))
 (in-package :lwcells)
 
 (defun careful-eql (old-value new-value)
@@ -22,11 +24,12 @@ This scheme is safe even if the value is mutated destructively."
   "A primitive reactive cell.
 NO-NEWS-P is a function to test if OLD-VALUE and NEW-VALUE
 of the cell are equivalent during assignment."
-  ins outs function (cycle-depth 0)
-  value (no-news-p 'careful-eql))
+  ins outs function value (no-news-p 'careful-eql))
+(defstruct (eager-cell (:include cell))
+  (depth 1))
 (defstruct (lazy-cell (:include cell))
   clean)
-(defstruct (observer-cell (:include cell)))
+(defstruct (observer-cell (:include eager-cell)))
 
 (defmethod print-object ((object cell) stream)
   (print-unreadable-object (object stream :type t :identity t)
@@ -34,7 +37,7 @@ of the cell are equivalent during assignment."
             (cell-value object)
             (cell-function object))))
 
-(defvar *activations* nil "The eager cells to be run at the end of
+(defvar *activations* (make-queue) "The eager cells to be run at the end of
 this cycle of propagation.")
 
 (defvar *delay-evaluation-p* nil "Bind this to T to delay cell evaluations.")
@@ -44,8 +47,8 @@ this cycle of propagation.")
 
 (defun invalidate (cell)
   "Mark dependent cells of CELL as not clean."
-  (unless (lazy-cell-p cell)
-    (pushnew cell *activations*))
+  (when (eager-cell-p cell)
+    (enqueue *activations* cell (eager-cell-depth cell)))
   (when (lazy-cell-p cell)
     (if (lazy-cell-clean cell)
         (setf (lazy-cell-clean cell) nil)
@@ -61,35 +64,43 @@ this cycle of propagation.")
                (let ((*print-circle* t))
                  (format stream "~a~%
 is circularly invoked ~a time~:p, but the limit is ~a time~:p."
-                         cell (1+ (cell-cycle-depth cell)) *cycle-limit*))))))
+                         cell (1+ (eager-cell-depth cell)) *cycle-limit*))))))
 
 (defun evaluate (cell)
   (when (cell-function cell)
     (tagbody start
-     (let ((old-depth (cell-cycle-depth cell)))
-       (when (and *cycle-limit* (>= old-depth *cycle-limit*))
-         (restart-case
-             (error 'cycle-error :cell cell)
-           (skip-evaluation ()
-             :report "Don't evaluate the cell this time."
-             (return-from evaluate))
-           (increase-cycle-limit (&optional (new-cycle-limit (+ *cycle-limit* 15)))
-             :report "Increase *CYCLE-LIMIT* and try evaluating the cell again."
-             (setq *cycle-limit* new-cycle-limit)
-             (go start))
-           (deactivate-cell ()
-             :report "Prevent this cell from ever triggering again."
-             (deactivate cell)
-             (return-from evaluate))))
-       (unwind-protect
-            (let ((*cell* cell))
-              (incf (cell-cycle-depth cell))
-              (unless (observer-cell-p cell)
-                (deactivate cell))
-              (setf (cell-value cell) (funcall (cell-function cell)))
-              (when (lazy-cell-p cell)
-                (setf (lazy-cell-clean cell) :clean)))
-         (setf (cell-cycle-depth cell) old-depth)))))
+       (let ((old-depth (if (eager-cell-p cell)
+                        (eager-cell-depth cell)
+                        0)))
+         (when (and *cycle-limit* (>= old-depth *cycle-limit*))
+           (restart-case
+               (error 'cycle-error :cell cell)
+             (skip-evaluation ()
+               :report "Don't evaluate the cell this time."
+               (return-from evaluate))
+             (increase-cycle-limit (&optional (new-cycle-limit (+ *cycle-limit* 15)))
+               :report "Increase *CYCLE-LIMIT* and try evaluating the cell again."
+               (setq *cycle-limit* new-cycle-limit)
+               (go start))
+             (deactivate-cell ()
+               :report "Prevent this cell from ever triggering again."
+               (deactivate cell)
+               (return-from evaluate))))
+         (unwind-protect
+              (let ((*cell* cell))
+                (unless (observer-cell-p cell)
+                  (deactivate cell))
+                (setf (cell-value cell) (funcall (cell-function cell)))
+                (when (eager-cell-p cell)
+                  (setf (eager-cell-depth cell)
+                        (1+ (reduce #'max (cell-ins cell)
+                                    :initial-value 0
+                                    :key (lambda (cell)
+                                           (if (eager-cell-p cell)
+                                               (eager-cell-depth cell)
+                                               0))))))
+                (when (lazy-cell-p cell)
+                  (setf (lazy-cell-clean cell) :clean)))))))
   (unless (cell-ins cell)
     (setf (cell-function cell) nil))
   cell)
@@ -97,7 +108,17 @@ is circularly invoked ~a time~:p, but the limit is ~a time~:p."
 (defun deactivate (cell)
   (dolist (input (cell-ins cell))
     (alexandria:deletef (cell-outs input) cell))
+  (when (eager-cell-p cell)
+    (setf (eager-cell-depth cell) 1))
   (setf (cell-ins cell) nil))
+
+(defun evaluate-activations ()
+  (unless *delay-evaluation-p*
+    (let ((*delay-evaluation-p* t))
+      (loop
+        (let ((cell (dequeue *activations*)))
+          (unless cell (return))
+          (evaluate cell))))))
 
 (defun cell-ref (cell)
   (when *cell*
@@ -108,6 +129,12 @@ is circularly invoked ~a time~:p, but the limit is ~a time~:p."
     (evaluate cell))
   (cell-value cell))
 
+(defun cell-set-function (cell new-function)
+  (deactivate cell)
+  (setf (cell-function cell) new-function)
+  (invalidate cell)
+  (evaluate-activations))
+
 (defun (setf cell-ref) (new-value cell)
   (let ((old-value (cell-value cell)))
     (deactivate cell)
@@ -115,24 +142,17 @@ is circularly invoked ~a time~:p, but the limit is ~a time~:p."
           (cell-function cell) nil)
     (when (cell-outs cell)
       (unless (funcall (cell-no-news-p cell) old-value new-value)
-        (if *delay-evaluation-p*
-            (mapc #'invalidate (cell-outs cell))
-            (mapc #'evaluate
-                  (let (*activations*)
-                    (mapc #'invalidate (cell-outs cell))
-                    *activations*))))))
+        (mapc #'invalidate (cell-outs cell))
+        (evaluate-activations))))
   new-value)
 
 (defun call-with-delayed-evaluation (thunk)
   (if *delay-evaluation-p*
       (funcall thunk)
-      (let (activations)
-        (unwind-protect
-             (let ((*delay-evaluation-p* t)
-                   *activations*)
-               (prog1 (funcall thunk)
-                 (setq activations *activations*)))
-          (mapc #'evaluate activations)))))
+      (unwind-protect
+           (let ((*delay-evaluation-p* t))
+             (funcall thunk))
+        (evaluate-activations))))
 
 (defmacro with-delayed-evaluation (&body body)
   `(call-with-delayed-evaluation (lambda () ,@body)))
@@ -149,7 +169,10 @@ is circularly invoked ~a time~:p, but the limit is ~a time~:p."
 (defun add-observer (cell function)
   (check-type function (or function symbol))
   (unless (find function (cell-outs cell) :key 'cell-observer-function)
-    (push (make-observer-cell :ins (list cell) :function (make-observer function))
+    (push (make-observer-cell :ins (list cell) :function (make-observer function)
+                              :depth (1+ (if (eager-cell-p cell)
+                                             (eager-cell-depth cell)
+                                             0)))
           (cell-outs cell))
     (cell-ref cell)
     function))
@@ -184,7 +207,7 @@ is circularly invoked ~a time~:p, but the limit is ~a time~:p."
 (defmacro let*-cell (bindings &body body)
   `(bind-cell let* ,bindings ,@body))
 
-(defmacro defmodel (class directsupers slotspecs &rest options)
+(defmacro defmodel (class directsupers slotspecs &body options)
   "Similar to `defclass', but supporting defining cell slots.
 A slot definition is treated as cell slots if it has a :cell slot option.
 The expression after :cell is treated as the definition for its cell,
