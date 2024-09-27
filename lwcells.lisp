@@ -135,7 +135,7 @@ is circularly invoked ~a time~:p, but the limit is ~a time~:p."
   (invalidate cell)
   (evaluate-activations))
 
-(defun (setf cell-ref) (new-value cell)
+(defun cell-set-value (new-value cell)
   (let ((old-value (cell-value cell)))
     (deactivate cell)
     (setf (cell-value cell) new-value
@@ -145,6 +145,19 @@ is circularly invoked ~a time~:p, but the limit is ~a time~:p."
         (mapc #'invalidate (cell-outs cell))
         (evaluate-activations))))
   new-value)
+
+(define-setf-expander cell-ref (cell &environment env)
+  (multiple-value-bind (dummies vals newval setter getter)
+       (get-setf-expansion cell env)
+     (let ((cell (gensym)) (store (gensym)))
+       (values `(,cell ,@dummies)
+               `(,getter ,@vals)
+               `(,store)
+               `(if ,cell (cell-set-value ,cell ,store)
+                    (let ((,(car newval) (cell ,store)))
+                      ,setter
+                      ,store))
+               `(cell-ref ,cell)))))
 
 (defun call-with-delayed-evaluation (thunk)
   (if *delay-evaluation-p*
@@ -176,8 +189,10 @@ is circularly invoked ~a time~:p, but the limit is ~a time~:p."
           (cell-outs cell))
     (cell-ref cell)
     function))
-(defun remove-observer (cell function)
-  (alexandria:deletef (cell-outs cell) function :key 'cell-observer-function)
+
+(defun remove-observer (cell function &key (key #'identity))
+  (alexandria:deletef (cell-outs cell) function
+                      :key (alexandria:compose key 'cell-observer-function))
   function)
 
 (defmacro cell (&body body)
