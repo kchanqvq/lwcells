@@ -150,13 +150,13 @@ is circularly invoked ~a time~:p, but the limit is ~a time~:p."
   (multiple-value-bind (dummies vals newval setter getter)
        (get-setf-expansion cell env)
      (let ((cell (gensym)) (store (gensym)))
-       (values `(,cell ,@dummies)
-               `(,getter ,@vals)
+       (values `(,@dummies ,cell)
+               `(,@vals ,getter)
                `(,store)
-               `(if ,cell (cell-set-value ,cell ,store)
+               `(if (cell-p ,cell)
+                    (cell-set-value ,store ,cell)
                     (let ((,(car newval) (cell ,store)))
-                      ,setter
-                      ,store))
+                      ,setter ,store))
                `(cell-ref ,cell)))))
 
 (defun call-with-delayed-evaluation (thunk)
