@@ -162,10 +162,11 @@ is circularly invoked ~a time~:p, but the limit is ~a time~:p."
 (defun call-with-delayed-evaluation (thunk)
   (if *delay-evaluation-p*
       (funcall thunk)
-      (unwind-protect
-           (let ((*delay-evaluation-p* t))
-             (funcall thunk))
-        (evaluate-activations))))
+      (let ((*activations* (make-queue)))
+        (unwind-protect
+             (let ((*delay-evaluation-p* t))
+               (funcall thunk))
+          (evaluate-activations)))))
 
 (defmacro with-delayed-evaluation (&body body)
   `(call-with-delayed-evaluation (lambda () ,@body)))
