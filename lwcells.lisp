@@ -8,7 +8,7 @@
            #:cell #:cell* #:defcell #:defcell*
            #:let-cell #:let*-cell
            #:defmodel #:self)
-  (:import-from #:damn-fast-priority-queue
+  (:import-from #:damn-fast-stable-priority-queue
                 #:make-queue #:enqueue #:dequeue))
 (in-package :lwcells)
 
